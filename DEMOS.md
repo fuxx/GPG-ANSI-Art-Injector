@@ -6,7 +6,7 @@
 
 ## Chip
 
-![Chip](designs/demos/Chip.png)
+![Chip](designs/demos/chip.png)
 
 ## Glider CCC
 
