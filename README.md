@@ -87,7 +87,7 @@ def get_payload(custom_text=""):
     return art
 ```
 
-#### Gemini AI Prompt for new Templates
+#### AI Prompt for new Templates
 
 Want a new design? Copy and paste this prompt into ChatGPT, Claude, or Gemini:
 
