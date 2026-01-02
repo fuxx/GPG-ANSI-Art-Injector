@@ -9,6 +9,9 @@ Created by [smp@chaos.social](https://chaos.social/@smp) for absolute no sane re
 ### *Feel free to create pull requests including new desings!*
 
 ## Demo
+
+*You can find additional screenshots in [DEMO.md](DEMOS.md).*
+
 ![GPG ANSI Art Inject](demo.png)
 
 ## 🎨 How It Works
