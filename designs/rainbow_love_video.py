@@ -1,0 +1,228 @@
+import math
+import re
+
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+RESET = "\033[0m"
+
+# Video parameters
+_FLAG_W = 52
+_FLAG_H = 18
+_STEP_COUNT = 64
+_FRAMES_PER_STEP = 256
+
+_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+# Match Rich DEFAULT_STYLES / progress_bar characters.
+_BAR_WIDTH = 49
+_BAR_BACK = "\033[38;5;237m"          # grey23 -> 8-bit color(237)
+_BAR_COMPLETE = "\033[38;2;249;38;114m"  # rgb(249,38,114)
+_BAR_FINISHED = "\033[38;2;114;156;31m"  # rgb(114,156,31)
+_SPINNER_STYLE = "\033[32m"           # green
+_PERCENT_STYLE = "\033[35m"           # magenta
+
+_BAR_CHAR = "━"
+_HALF_BAR_RIGHT = "╸"
+_HALF_BAR_LEFT = "╺"
+
+_PRIDE_RGB = [
+    (228, 3, 3),
+    (255, 140, 0),
+    (255, 237, 0),
+    (0, 128, 38),
+    (0, 77, 255),
+    (117, 7, 135),
+]
+
+_WAVE_AMPLITUDE = 4    # max left indent (spaces)
+_WAVE_PERIOD = 480.0   # smaller = faster wave
+_SHIMMER_PERIOD = 640.0
+_GRADIENT_SEGMENTS = 8
+_RIGHT_WAVE_PHASE = 3
+
+
+def _strip_ansi(s: str) -> str:
+    return _ANSI_ESCAPE_RE.sub("", s)
+
+
+def _boxed_lines(lines: list[str], *, pad: int = 1, rounded: bool = True, reset: str = "") -> list[str]:
+    """Wrap `lines` in a Unicode box (visible width ignores ANSI escapes)."""
+    if not lines:
+        return []
+
+    tl, tr, bl, br = ("╭", "╮", "╰", "╯") if rounded else ("┌", "┐", "└", "┘")
+    h, v = "─", "│"
+    vis_len = lambda s: len(_strip_ansi(s))  # noqa: E731
+
+    visible_width = max(vis_len(line) for line in lines)
+    inner_width = visible_width + 2 * pad
+
+    out = [f"{reset}{tl}{h * inner_width}{tr}{reset}\n"]
+    for line in lines:
+        right_pad = " " * max(0, visible_width - vis_len(line))
+        out.append(f"{reset}{v}{' ' * pad}{line}{right_pad}{' ' * pad}{v}{reset}\n")
+    out.append(f"{reset}{bl}{h * inner_width}{br}{reset}\n")
+    return out
+
+
+def _cup(row, col):
+    # Cursor position (1-indexed): similar to `tput cup row col`
+    return f"\033[{row};{col}H"
+
+
+def _color_256_fg(n: int) -> str:
+    return f"\033[38;5;{n}m"
+
+
+def _bg_truecolor(r: int, g: int, b: int) -> str:
+    return f"\033[48;2;{r};{g};{b}m"
+
+
+def _shade_rgb(rgb: tuple[int, int, int], factor: float) -> tuple[int, int, int]:
+    r, g, b = rgb
+    f = max(0.0, min(1.35, factor))
+    return (min(255, int(r * f)), min(255, int(g * f)), min(255, int(b * f)))
+
+
+def _wave_indent(y: int, t: int, *, phase_offset: float = 0.0) -> int:
+    # A gentle traveling wave down the flag.
+    phase = (t / _WAVE_PERIOD) + (y * 0.35) + phase_offset
+    # Map sine from [-1, 1] -> [0, 1] and scale.
+    return int(round(((math.sin(phase) + 1.0) * 0.5) * _WAVE_AMPLITUDE))
+
+
+def _intensity(y: int, t: int) -> float:
+    # Subtle shimmer (brightness) that doesn't change the stripe hues.
+    phase = ((2.0 * math.pi) * (t / _SHIMMER_PERIOD)) + (y * 0.22)
+    return 0.78 + 0.22 * ((math.sin(phase) + 1.0) * 0.5)
+
+
+def _gradient_intensity(x01: float, y: int, t: int) -> float:
+    # Moving highlight across the stripe, anchored to the same shimmer period.
+    phase = ((2.0 * math.pi) * (t / _SHIMMER_PERIOD)) + (y * 0.18) + (x01 * 4.0)
+    return 0.82 + 0.28 * ((math.sin(phase) + 1.0) * 0.5)
+
+
+def _render_stripe_fill(width: int, *, base_rgb: tuple[int, int, int], y: int, t: int, reset: str) -> str:
+    if width <= 0:
+        return ""
+
+    seg_count = min(_GRADIENT_SEGMENTS, width)
+    base = _intensity(y, t)
+    parts: list[str] = []
+
+    # Render in coarse segments to keep payload size reasonable.
+    for seg in range(seg_count):
+        seg_w = (width // seg_count) + (1 if seg < (width % seg_count) else 0)
+        if seg_w <= 0:
+            continue
+
+        x01 = seg / (seg_count - 1) if seg_count > 1 else 0.0
+        f = base * _gradient_intensity(x01, y, t)
+        r, g, b = _shade_rgb(base_rgb, f)
+        parts.append(_bg_truecolor(r, g, b) + (" " * seg_w))
+
+    return "".join(parts) + reset
+
+
+def _render_flag_lines(*, t: int, reset: str) -> list[str]:
+    lines: list[str] = []
+    for y in range(_FLAG_H):
+        stripe = (y * len(_PRIDE_RGB)) // _FLAG_H
+        stripe_rgb = _PRIDE_RGB[stripe]
+
+        left_indent = _wave_indent(y, t)
+        right_indent = _wave_indent(y, t, phase_offset=_RIGHT_WAVE_PHASE)
+        if left_indent + right_indent > _FLAG_W:
+            over = left_indent + right_indent - _FLAG_W
+            if right_indent >= over:
+                right_indent -= over
+            else:
+                left_indent = max(0, left_indent - (over - right_indent))
+                right_indent = 0
+
+        fill = max(0, _FLAG_W - left_indent - right_indent)
+
+        # Leave both indents as terminal background to create visible waving edges.
+        lines.append(
+            (" " * left_indent)
+            + _render_stripe_fill(fill, base_rgb=stripe_rgb, y=y, t=t, reset=reset)
+            + (" " * right_indent)
+        )
+    return lines
+
+
+def _render_loader_line(t: int, *, frames: int, reset: str) -> str:
+    spinner = _SPINNER_FRAMES[t % len(_SPINNER_FRAMES)]
+
+    completed = t + 1
+    total = frames
+    is_finished = completed >= total
+    complete_style = _BAR_FINISHED if is_finished else _BAR_COMPLETE
+
+    complete_halves = (_BAR_WIDTH * 2 * completed) // total if total else _BAR_WIDTH * 2
+    complete_halves = min(_BAR_WIDTH * 2, max(0, complete_halves))
+    bar_count, half_bar_count = divmod(complete_halves, 2)
+    remaining_bars = _BAR_WIDTH - bar_count - half_bar_count
+
+    bar_parts: list[str] = []
+    if bar_count:
+        bar_parts.append(complete_style + (_BAR_CHAR * bar_count) + reset)
+    if half_bar_count:
+        bar_parts.append(complete_style + _HALF_BAR_RIGHT + reset)
+    if remaining_bars:
+        if not half_bar_count and bar_count:
+            bar_parts.append(_BAR_BACK + _HALF_BAR_LEFT + reset)
+            remaining_bars -= 1
+        if remaining_bars:
+            bar_parts.append(_BAR_BACK + (_BAR_CHAR * remaining_bars) + reset)
+
+    percent = min(100, max(0, (completed * 100) // total)) if total else 100
+    return (
+        _SPINNER_STYLE
+        + spinner
+        + reset
+        + " "
+        + "".join(bar_parts)
+        + " "
+        + _PERCENT_STYLE
+        + f"{percent:>3d}%"
+        + reset
+        + "\n"
+    )
+
+
+def get_payload(custom_text=""):
+    # Video-ish effect: precompute frames and redraw in-place.
+    frames = _STEP_COUNT * _FRAMES_PER_STEP
+    reset = RESET
+
+    out: list[str] = [
+        "\n",
+        "\033[?25l",  # civis: hide cursor
+        "\033[2J",    # clear screen
+    ]
+
+    for t in range(frames):
+        out.append(_cup(1, 1))
+        out.append(reset + "\n")
+        out.extend(
+            _boxed_lines(
+                _render_flag_lines(t=t, reset=reset),
+                pad=1,
+                rounded=True,
+                reset=reset,
+            )
+        )
+        out.append(_render_loader_line(t, frames=frames, reset=reset))
+
+    out.append(
+        (_color_256_fg(255) + "\n" + custom_text + reset + "\n") if custom_text else "\n"
+    )
+    out.append("\033[?25h")  # show cursor
+    out.append(RESET)
+    if not out[-1].endswith("\n"):
+        out.append("\n")
+
+    return "".join(out)
