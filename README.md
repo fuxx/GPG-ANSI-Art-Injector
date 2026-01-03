@@ -10,9 +10,14 @@ Created by [smp@chaos.social](https://chaos.social/@smp) for absolute no sane re
 
 ## Demo
 
-*You can find additional screenshots in [DEMO.md](DEMOS.md).*
+*You can find additional screenshots in [DEMO.md](DEMOS.md) and animated gifs in [DEMO_GIFS.md](DEMO_GIFS.md).*
+
+### Static art
 
 ![GPG ANSI Art Inject](demo.png)
+
+### Dynamic art
+![GPG ANSI Art Inject](designs/demos/gifs/game_of_life_video.gif)
 
 ## 🎨 How It Works
 
@@ -115,7 +120,25 @@ The Design Request: [INSERT YOUR IDEA HERE, e.g., "A retro neon synthwave sunset
 
 ```
 
-## Notes & Disclaimer
+## Notes, Disclaimer & Limitations
 GUI Compatibility: While this works perfectly in terminals (curl, cat, CLI gpg), importing this key into GUI tools (like Thunderbird/Enigmail or Kleopatra) may display the raw ANSI escape codes as "garbage" text in the import confirmation dialog. The key itself remains valid.
 
 Packet Structure: This tool relies on the OpenPGP standard's tolerance for stream processing. It uses "New Format" packet encoding (RFC 4880).
+
+Video sequences: Up to the terminal the speed of the animation may vary. Some terminals run with lightning speed, where others are rendering in a normal speed. Unfortunate there is no way controlling the playback behavior of different terminals.
+
+### Video recording and transformation into gifs
+
+The videos have been recorded using asciinema and have been converted with agg. Speed has been set to 0.1-0.15 for more realistic playback behavior. 
+
+```bash
+# Recording
+asciinema rec -c "cat key.asc | gpg -q" output.cast
+
+# Clone and build agg using docker
+git clone https://github.com/asciinema/agg
+docker build -t agg . 
+
+# Convert cast to gif
+docker run --rm -it -u $(id -u):$(id -g) -v $PWD:/data agg output.cast output.gif --speed 0.15 --rows 25 --cols 80   
+```

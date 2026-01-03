@@ -1,8 +1,18 @@
 # Design demonstrations
 
+## Blinkenlights
+
+![Blinkenlights](designs/demos/screenshots/blinkenlights.png)
+<br /><br />
+
+## Chip
+
+![Chip](designs/demos/screenshots/chip.png)
+<br /><br />
+
 ## Fake key summary
 
-Inject a custom fake key summary
+Inject a custom fake key summary through unescaped Operation System Command (OSC), by not providing a terminator of the sequence at the end.
 ```console
 $ python3 gpg_injector.py --input plain_public_key.asc --script designs/fake_key_summary.py --output result_key.asc --text "pub   rsa2048 2011-09-20 [SC]
       ABAF11C65A2970B130ABE3C479BE3E4300411886
@@ -31,35 +41,34 @@ $
 
 *Note: this works on GNU/Linux with gnome-terminal, xfce4-terminal, konsole, xterm, ... YMMV with other terminal emulators*
 
-## Blinkenlights
-
-![Blinkenlights](designs/demos/blinkenlights.png)
-
-## Chip
-
-![Chip](designs/demos/chip.png)
-
+<br /><br />
 ## Glider CCC
 
-![Glider CCC](designs/demos/glider_ccc.png)
+![Glider CCC](designs/demos/screenshots/glider_ccc.png)
+<br /><br />
 
 ## Matrix
 
-![Matrix](designs/demos/matrix.png)
+![Matrix](designs/demos/screenshots/matrix.png)
+<br /><br />
 
 ## Rainbow love
 
-![Rainbow love](designs/demos/rainbow_love.png)
+![Rainbow love](designs/demos/screenshots/rainbow_love.png)
+<br /><br />
 
 ## Retro synthwave
 
-![Retro synthwave](designs/demos/retro_synthwave.png)
+![Retro synthwave](designs/demos/screenshots/retro_synthwave.png)
+<br /><br />
 
 ## Rocket
 
-![Rocket](designs/demos/rocket.png)
+![Rocket](designs/demos/screenshots/rocket.png)
+<br /><br />
 
 
 ## Warning (Caution!)
 
-![Caution](designs/demos/warning.png)
+![Caution](designs/demos/screenshots/warning.png)
+<br /><br />

@@ -2,3 +2,5 @@
 *.idea
 __pycache__
 !plain_public_key.asc
+*.gif
+*.cast
