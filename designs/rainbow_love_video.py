@@ -1,14 +1,12 @@
 import math
 
 
-# ANSI / terminal control sequences
+# ANSI terminal control sequences
 ESC = "\x1b"
 CSI = ESC + "["
 
 RESET_ALL = CSI + "0m"
-RESET_FG = CSI + "39m"  # reset foreground only
 RESET_BG = CSI + "49m"  # reset background only
-
 REVERSE_VIDEO = CSI + "7m"
 
 CURSOR_HOME = CSI + "H"
@@ -26,34 +24,24 @@ FG_RGB = CSI + "38;2;{r};{g};{b}m"
 _V_BLOCKS_1_8 = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
 
 
-def _block_level_1_8(frac: float) -> int:
-    # Map [0,1] -> {0..8}, rounded.
-    frac = _clamp(frac, 0.0, 1.0)
-    return int(frac * 8.0 + 0.5)
-
-
-_PRIDE_FLAG_6 = [
-    (228, 3, 3),     # Red   (#E40303)
-    (255, 140, 0),   # Orange(#FF8C00)
-    (255, 237, 0),   # Yellow(#FFED00)
-    (0, 128, 38),    # Green (#008026)
-    (0, 77, 255),    # Blue  (#004DFF)
-    (117, 7, 135),   # Violet(#750787)
+PRIDE_COLORS = [
+    (228, 3, 3),     # Red
+    (255, 140, 0),   # Orange
+    (255, 237, 0),   # Yellow
+    (0, 128, 38),    # Green
+    (0, 77, 255),    # Blue
+    (117, 7, 135),   # Violet
 ]
-
-
-def _palette(n: int) -> list[tuple[int, int, int]]:
-    n = max(1, int(n))
-    # Hardcoded Pride flag colors (no HSV generation).
-    # If n != 6, repeat/truncate deterministically.
-    base = _PRIDE_FLAG_6
-    if n <= len(base):
-        return base[:n]
-    return [base[i % len(base)] for i in range(n)]
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
+
+
+def _block_level_1_8(fraction: float) -> int:
+    """Map [0, 1] to block level {0..8}, rounded."""
+    clamped = _clamp(fraction, 0.0, 1.0)
+    return int(clamped * 8.0 + 0.5)
 
 
 def _norm3(x: float, y: float, z: float) -> tuple[float, float, float]:
@@ -64,18 +52,21 @@ def _norm3(x: float, y: float, z: float) -> tuple[float, float, float]:
 
 
 def _shade(rgb: tuple[int, int, int], factor: float) -> tuple[int, int, int]:
+    """Apply shading to RGB color. Factor <1 darkens, >1 brightens."""
     r, g, b = rgb
-    # Shading factor: <1 darkens, >1 brightens.
-    # Keep highlights close to the original color to avoid blowouts.
-    f = max(0.0, min(1.2, factor))
-    return (min(255, int(r * f)), min(255, int(g * f)), min(255, int(b * f)))
+    clamped_factor = _clamp(factor, 0.0, 1.2)
+    return (
+        min(255, int(r * clamped_factor)),
+        min(255, int(g * clamped_factor)),
+        min(255, int(b * clamped_factor)),
+    )
 
 
 def _render_flag_lines(*, t: int, width: int, height: int, reset: str) -> list[str]:
-    stripes = 6
-    colors = _palette(stripes)
+    colors = PRIDE_COLORS
+    stripes = len(colors)
 
-    # A simple “physics-respecting” cloth model:
+    # A simple "physics-respecting" cloth model:
     # - anchored at the left edge (flagpole) -> wave amplitude grows with x
     # - traveling wave downwind with a secondary harmonic
     # - slight y-dependent phase to simulate twist / coupling
@@ -93,59 +84,59 @@ def _render_flag_lines(*, t: int, width: int, height: int, reset: str) -> list[s
     time = float(t)
 
     def amp_ramp(x: float) -> float:
-        # 0 at the pole, 1 at the free edge (slightly eased).
+        """0 at the pole, 1 at the free edge (eased)."""
         if width <= 1:
             return 1.0
-        u = _clamp(x / float(width - 1), 0.0, 1.0)
-        return u ** 1.6
+        x01 = _clamp(x / float(width - 1), 0.0, 1.0)
+        return x01**1.6
 
-    def gust(tt: float) -> float:
-        # Slow modulation so the flag doesn't feel perfectly periodic.
-        return 0.75 + 0.25 * math.sin(tt * 0.035)
+    def gust(time_val: float) -> float:
+        """Slow modulation to avoid perfectly periodic motion."""
+        return 0.75 + 0.25 * math.sin(time_val * 0.035)
 
-    def base_wave(x: float, tt: float, phase: float = 0.0) -> float:
-        # A traveling wave with a secondary harmonic. Normalized to [-1, 1].
+    def base_wave(x: float, time_val: float, phase: float = 0.0) -> float:
+        """Traveling wave with secondary harmonic, normalized to [-1, 1]."""
         kx = (2.0 * math.pi) / wavelength
-        w0 = math.sin((kx * x) - (omega * tt) + phase)
-        w1 = 0.45 * math.sin((2.0 * kx * x) - (1.85 * omega * tt) + phase + 1.2)
+        w0 = math.sin((kx * x) - (omega * time_val) + phase)
+        w1 = 0.45 * math.sin(
+            (2.0 * kx * x) - (1.85 * omega * time_val) + phase + 1.2
+        )
         return _clamp((w0 + w1) / 1.45, -1.0, 1.0)
 
-
-    def heightfield(x: float, y: float, tt: float) -> float:
-        # Out-of-plane displacement (used only for shading).
-        a = amp_ramp(x) * gust(tt)
+    def heightfield(x: float, y: float, time_val: float) -> float:
+        """Out-of-plane displacement (used only for shading)."""
+        amplitude = amp_ramp(x) * gust(time_val)
         phase_y = y * ky
-        w = base_wave(x, tt, phase=phase_y)
-        return depth_amp * a * w
+        wave = base_wave(x, time_val, phase=phase_y)
+        return depth_amp * amplitude * wave
 
     # Precompute silhouette edges and a per-column stripe displacement.
     top_edge: list[float] = []
     bot_edge: list[float] = []
     disp: list[float] = []
     for x in range(width):
-        xf = float(x)
-        a = amp_ramp(xf) * gust(time)
-        w_top = base_wave(xf, time, phase=0.0)
-        w_bot = base_wave(xf, time, phase=0.35)
+        x_pos = float(x)
+        amplitude = amp_ramp(x_pos) * gust(time)
+        wave_top = base_wave(x_pos, time, phase=0.0)
+        wave_bottom = base_wave(x_pos, time, phase=0.35)
 
         # Keep silhouette strictly within [0, height]. Note: the stripe pattern
         # is sampled with a +disp_y offset (see `disp` below), which moves stripe
         # boundaries by -disp_y in screen-space. To keep the *top* stripe's
         # perceived motion consistent with the rest, the top edge must respond
         # with the opposite sign vs. the sampling displacement.
-        top_edge.append(edge_amp * a * (0.5 - 0.5 * w_top))
-        bot_edge.append(float(height) - (edge_amp * a * (0.5 + 0.5 * w_bot)))
+        top_edge.append(edge_amp * amplitude * (0.5 - 0.5 * wave_top))
+        bot_edge.append(
+            float(height) - (edge_amp * amplitude * (0.5 + 0.5 * wave_bottom))
+        )
 
         # Stripe sampling displacement aligned to the same wave as the silhouette.
-        disp.append(stripe_amp * a * w_top)
+        disp.append(stripe_amp * amplitude * wave_top)
 
-    def stripe_at(yf: float) -> int:
-        yf = max(0.0, min(float(height) - 1e-6, yf))
-        return int((yf / float(height)) * stripes)
-
-    def stripe_boundary_y(idx: int) -> float:
-        # Boundary between stripe idx-1 and idx in flag-space coordinates.
-        return (float(idx) / float(stripes)) * float(height)
+    def stripe_at(y_pos: float) -> int:
+        """Return stripe index for given y position."""
+        clamped_y = _clamp(y_pos, 0.0, float(height) - 1e-6)
+        return int((clamped_y / float(height)) * stripes)
 
     # Lighting from estimated surface normals (height derivatives).
     light_dir = _norm3(-0.65, -0.25, 1.0)  # from upper-left/front
@@ -185,7 +176,9 @@ def _render_flag_lines(*, t: int, width: int, height: int, reset: str) -> list[s
         brightness -= 0.72 * _clamp(slope * 3.6, 0.0, 1.0)
 
         # Tiny sparkle, clamped within range.
-        sparkle = 0.015 * (0.5 + 0.5 * math.sin(0.15 * time + (x * 0.35) + (y * 0.22)))
+        sparkle = 0.015 * (
+            0.5 + 0.5 * math.sin(0.15 * time + (x * 0.35) + (y * 0.22))
+        )
         return _clamp(brightness + sparkle, 0.0, 1.12)
 
     lines: list[str] = []
@@ -224,8 +217,11 @@ def _render_flag_lines(*, t: int, width: int, height: int, reset: str) -> list[s
                         ch = " "
                     else:
                         # One boundary crosses this cell. Blend with BG(top) and FG(bottom).
-                        # Compute boundary position in *cell* coordinates.
-                        boundary = stripe_boundary_y(max(top_i, bot_i)) - disp_y
+                        boundary_idx = max(top_i, bot_i)
+                        boundary = (
+                            (float(boundary_idx) / float(stripes)) * float(height)
+                            - disp_y
+                        )
                         boundary_in_cell = _clamp(boundary - float(y), 0.0, 1.0)
                         bottom_frac = 1.0 - boundary_in_cell
 
@@ -236,7 +232,10 @@ def _render_flag_lines(*, t: int, width: int, height: int, reset: str) -> list[s
                         # Ensure FG blocks draw over the chosen background.
                         tr, tg, tb = rgb_top
                         br, bg, bb = rgb_bot
-                        style = BG_RGB.format(r=tr, g=tg, b=tb) + FG_RGB.format(r=br, g=bg, b=bb)
+                        style = (
+                            BG_RGB.format(r=tr, g=tg, b=tb)
+                            + FG_RGB.format(r=br, g=bg, b=bb)
+                        )
                         ch = _V_BLOCKS_1_8[level]
 
                 else:
@@ -319,7 +318,13 @@ def get_payload(custom_text: str = "") -> str:
     ]
 
     for t in range(base_frames):
-        frame = [line + "\n" for line in _render_flag_lines(t=t, width=width, height=height, reset=RESET_ALL)]
+        frame_lines = _render_flag_lines(
+            t=t,
+            width=width,
+            height=height,
+            reset=RESET_ALL,
+        )
+        frame = [line + "\n" for line in frame_lines]
         for _ in range(frame_repeat):
             out.append(CUP.format(row=1, col=1))
             out.append(RESET_ALL + "\n")
@@ -330,7 +335,6 @@ def get_payload(custom_text: str = "") -> str:
             else:
                 out.append("\n")
 
-    out.append(SHOW_CURSOR)
     out.append(RESET_ALL)
     out.append(LEAVE_ALTERNATE_SCREEN)
     out.append(SHOW_CURSOR)
